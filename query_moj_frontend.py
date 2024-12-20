@@ -1,11 +1,12 @@
-import requests
-from datetime import date
 import time
+from datetime import date
+import os
+import requests
 
 # GitHub API settings
 SEARCH_URL = "https://api.github.com/search/code"
 CREATE_ISSUE_BASE_URL = "https://api.github.com/repos"
-TOKEN = "your_personal_access_token" #addd token
+TOKEN = os.environ.get('GH_TOKEN')
 HEADERS = {
   "Authorization": f"token {TOKEN}",
   "Accept": "application/vnd.github+json"
