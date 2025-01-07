@@ -1,6 +1,9 @@
+import json
+import logging
+import os
 import time
 from datetime import date
-import os
+
 import requests
 
 # GitHub API settings
@@ -12,104 +15,116 @@ HEADERS = {
   "Accept": "application/vnd.github+json"
 }
 KEYWORDS = [
-  "class=\"moj-datepicker",
-  "class=\"moj-pagination",
-  "class=\"moj-page-header-actions"
+  "moj-datepicker",
+  "moj-pagination",
+  "moj-page-header-actions"
 ]
 
 # Retry settings
-MAX_RETRIES = 5
-WAIT_TIME = 3600
+MAX_RETRIES = 10  # code search limits to 1000 results
+WAIT_TIME = 60  # code search api rate limit is 10 requests / min
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def make_request_with_retries(url, method="GET", headers=None, params=None, data=None):
-  retries = 0
-  while retries < MAX_RETRIES:
-    if method == "GET":
-      response = requests.get(url, headers=headers, params=params)
-    elif method == "POST":
-      response = requests.post(url, headers=headers, json=data)
-    else:
-      raise ValueError("Unsupported HTTP method.")
+    retries = 0
+    while retries < MAX_RETRIES:
+        if method == "GET":
+            response = requests.get(url, headers=headers, params=params)
+        elif method == "POST":
+            response = requests.post(url, headers=headers, json=data)
+        else:
+            raise ValueError("Unsupported HTTP method.")
 
-    if response.status_code == 200 or response.status_code == 201:
-      return response  # Successful response
-    elif response.status_code == 403:
-      print(f"403 Forbidden - Retry {retries + 1}/{MAX_RETRIES}")
-      time.sleep(WAIT_TIME)
-      retries += 1
-    else:
-      print(f"Error: {response.status_code} - {response.json().get('message', 'Unknown error')}")
-      break
+        if response.status_code == 200 or response.status_code == 201:
+            return response  # Successful response
+        elif response.status_code == 403:
+            print(f"403 Forbidden - Retry {retries + 1}/{MAX_RETRIES}")
+            time.sleep(WAIT_TIME)
+            retries += 1
+        else:
+            print(f"Error: {response.status_code} - {response.json().get('message', 'Unknown error')}")
+            break
 
-  # If we exhaust retries, return the final response or None
-  print("Max retries reached or non-recoverable error occurred.")
-  return None
-
-
-def search_github_code_global(keyword, per_page=100):
-  all_results = []
-  page = 1
-
-  while True:
-    params = {
-      "q": keyword,
-      "per_page": per_page,
-      "page": page
-    }
-
-    response = make_request_with_retries(SEARCH_URL, method="GET", headers=HEADERS, params=params)
-
-    if response and response.status_code == 200:
-      items = response.json().get("items", [])
-      all_results.extend(items)
-
-      # Stop if there are no more results
-      if len(items) < per_page:
-        break
-
-      page += 1
-    else:
-      break
-
-  return all_results
-
-
-def create_github_issue(title, body=None, labels=None):
-  owner = "ministryofjustice"
-  repo = "moj-frontend-analytics"
-  data = {
-    "title": title,
-    "body": body,
-    "labels": labels or []
-  }
-
-  url = f"{CREATE_ISSUE_BASE_URL}/{owner}/{repo}/issues"
-
-  response = make_request_with_retries(url, method="POST", headers=HEADERS, data=data)
-
-  if response and response.status_code == 201:
-    print(f"Issue created successfully: {response.json()['html_url']}")
-    return response.json()
-  else:
-    print("Failed to create issue.")
+    # If we exhaust retries, return the final response or None
+    print("Max retries reached or non-recoverable error occurred.")
     return None
 
 
+def search_github_code_global(keyword, per_page=100):
+    results = []
+    page = 1
+
+    while True:
+        params = {
+          "q": f'class="{keyword}',
+          "per_page": per_page,
+          "page": page
+        }
+        response = make_request_with_retries(SEARCH_URL, method="GET", headers=HEADERS, params=params)
+
+        if response and response.status_code == 200:
+            print(f"total results: {response.json()['total_count']}")
+            items = response.json().get("items", [])
+
+            for item in items:
+                results.append({
+                        "repository": item['repository']['full_name'],
+                        "owner": item['repository']['owner']['login'],
+                        "url": item['repository']['html_url'],
+                        "description": item['repository']['description'],
+                        "date": date.today().strftime('%d/%m/%y %H:%M:%S')
+                    })
+
+            # Stop if there are no more results
+            if len(items) < per_page:
+                break
+
+            page += 1
+        else:
+            break
+
+    return results
+
+
+def save_json_to_repo(data, filename):
+    try:
+        # Ensure filename has .json extension
+        if not filename.endswith('.json'):
+            filename += '.json'
+
+        logger.info(f"Saving JSON to {filename}")
+
+        # Save the file
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+
+        logger.info("File saved successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error saving file: {str(e)}")
+        return False
+
+
 # Run the script
-def start():
-  for keyword in KEYWORDS:
-    results = search_github_code_global(keyword)
-
-    if results:
-      print(f"Found {len(results)} results for keyword: {keyword}\n")
-      body = f"Issue created on: {date.today()}"
-
-      for i, result in enumerate(results, start=1):
-        create_github_issue(result['repository']['full_name'], body, [keyword])
-    else:
-      print(f"No results found for keyword: {keyword}")
-
-
 if __name__ == "__main__":
-  start()
+    all_results = {}
+    for keyword in KEYWORDS:
+        results = search_github_code_global(keyword)
+
+        if results:
+            print(f"Found {len(results)} results for keyword: {keyword}\n")
+            all_results[keyword] = results
+        else:
+            print(f"No results found for keyword: {keyword}")
+
+    # save json file
+    success = save_json_to_repo(all_results, 'results.json')
+    exit(0 if success else 1)
