@@ -17,7 +17,7 @@ HEADERS = {
 KEYWORDS = [
   "moj-datepicker",
   "moj-pagination",
-  "moj-page-header-actions"
+  # "moj-page-header-actions"
 ]
 
 # Retry settings
@@ -58,12 +58,15 @@ def make_request_with_retries(url, method="GET", headers=None, params=None, data
 
 
 def search_github_code_global(keyword, per_page=100):
-    results = []
+    results = {
+        "count": 0,
+        "items": []
+    }
     page = 1
 
     while True:
         params = {
-          "q": f'class="{keyword}',
+            "q": f'class="{keyword} extension:html',
           "per_page": per_page,
           "page": page
         }
@@ -71,19 +74,23 @@ def search_github_code_global(keyword, per_page=100):
 
         if response and response.status_code == 200:
             print(f"total results: {response.json()['total_count']}")
+            results['count'] = response.json()['total_count']
             items = response.json().get("items", [])
-
+            logger.info(f"items count: {len(items)}")
             for item in items:
-                results.append({
+                results["items"].append({
                         "repository": item['repository']['full_name'],
                         "owner": item['repository']['owner']['login'],
                         "url": item['repository']['html_url'],
+                        "path": item['path'],
+                        "extension": item['path'].split('.')[-1],
                         "description": item['repository']['description'],
                         "date": date.today().strftime('%d/%m/%y %H:%M:%S')
                     })
 
             # Stop if there are no more results
             if len(items) < per_page:
+                logger.info(f"{keyword} results done")
                 break
 
             page += 1
@@ -120,7 +127,7 @@ if __name__ == "__main__":
         results = search_github_code_global(keyword)
 
         if results:
-            print(f"Found {len(results)} results for keyword: {keyword}\n")
+            print(f"Found {len(results["items"])} results for keyword: {keyword}\n")
             all_results[keyword] = results
         else:
             print(f"No results found for keyword: {keyword}")
