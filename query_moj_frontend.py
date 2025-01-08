@@ -84,10 +84,12 @@ def search_github(query, results=None, per_page=100):
 
         if response and response.status_code == 200:
             logger.info(f"total results: {response.json()['total_count']}")
-            results['count'] = results['count'] + response.json()['total_count']
+            if page == 1:
+                results['count'] = results['count'] + response.json()['total_count']
+
             items = response.json().get("items", [])
             logger.info(f"items count: {len(items)}")
-            logger.info(f"cumulative items count: {results['count'] + response.json()['total_count']}")
+            logger.info(f"cumulative items count: {results['count']}")
             for item in items:
                 results["items"].append({
                         "repository": item['repository']['full_name'],
@@ -174,7 +176,7 @@ if __name__ == "__main__":
         results = process_queries(queries)
 
         if results:
-            print(f"Found {len(results["items"])} results for component: {component}\n")
+            print(f"Found {results["count"]} results for component: {component}\n")
             all_results[component] = results
         else:
             print(f"No results found for component: {component}")
