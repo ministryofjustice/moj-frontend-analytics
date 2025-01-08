@@ -1,3 +1,6 @@
+# generated results
+results.json
+
 # Python artifacts
 __pycache__/
 *.py[cod]
